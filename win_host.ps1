@@ -1,5 +1,5 @@
 #!powershell
-#
+# 
 # Copyright 2017, Ripon Banik <ripon.banik@yahoo.com>
 #
 # Ansible is free software: you can redistribute it and/or modify
@@ -20,20 +20,33 @@
 # POWERSHELL_COMMON
 
 # Ansible Windows PowerShell Template
+Set-StrictMode -Version 2.0
 
-function add_host($host_name, $ip_address) {
+function add_host($host_name,$ip_address) {
 
     If ((Get-Content "$($env:windir)\system32\Drivers\etc\hosts" ) -contains  "$ip_address $host_name")  {
         $result.msg = "Entry already exists in host file"      
         $result.changed = $false         
     } 
-    else {
-      Add-Content -Encoding UTF8  "$($env:windir)\system32\Drivers\etc\hosts" "$ip_address $host_name" 
-      $result.msg = "Added to host file"      
+    else {      
+      Add-Content -Encoding UTF8  "$($env:windir)\system32\Drivers\etc\hosts" "$ip_address $host_name"      
+      $result.msg = "Successfully added to host file"      
       $result.changed = $true
     } 
 }    
 
+function remove_host($host_name,$ip_address) {
+
+    If ((Get-Content "$($env:windir)\system32\Drivers\etc\hosts" ) -contains  "$ip_address $host_name")  {
+        (Get-Content "$($env:windir)\system32\Drivers\etc\hosts" ) | select-string -pattern "$ip_address $host_name" -notmatch | Set-Content "$($env:windir)\system32\Drivers\etc\hosts"
+        $result.msg = "Successfully removed from host file"      
+        $result.changed = $true
+    } 
+    else {            
+      $result.msg = "Entry does not exist in host file"      
+      $result.changed = $false
+    } 
+}    
 
 
 # Parse the Keywords from the ansible module call
@@ -49,28 +62,43 @@ $params = Parse-Args $args;
 # the "changed" and "msg" attributes.
 # When "changed" == "false" it means that no action was taken to change the system. It is also
 # a good idea to update the "msg" attribute and mention why no change occurred.
-$result = New-Object psobject;
-Set-Attr $result "changed" $false;
-Set-Attr $result "msg" "";
+#$result = New-Object psobject;
+#Set-Attr $result "changed" $false;
+#Set-Attr $result "msg" "";
+
+# Changed the above in Ansible 2.4 - http://docs.ansible.com/ansible/2.4/dev_guide/developing_modules_general_windows.html#windows-new-module-development
+$result = @{}
+$result.changed = $false
+$result.msg = ""
 
 # Extract each attribute into a variable. During this stage you can perform various checks.
 # 1. Like checking if the attribute is empty. If it is, then exit the module with a failure
 $host_name  = Get-Attr $params "host_name"  -failifempty $true
 $ip_address = Get-Attr $params "ip_address" -failifempty $true
 
-Set-Attr $result "host_name"  $host_name;
-Set-Attr $result "ip_address" $ip_address;
+# New in Ansible 2.4
+#$host_name  = Get-AnsibleParam -obj $params -name "host_name" -type "str" -failifempty $true
+#$ip_address = Get-AnsibleParam -obj $params -name "ip_address" -type "str" -failifempty $true
+
+#Set-Attr $result "host_name"  $host_name;
+#Set-Attr $result "ip_address" $ip_address;
+
+$result.host_name  = $host_name
+$result.ip_address = $ip_address
 
 # 3. Set default state of an attribute. In this case the "state" attribute is set to "present" if not set.
-# $state = Get-Attr $params "state" "present"
-# $state = $state.ToString().ToLower()
-# If (($state -ne "present") -and ($state -ne "absent")) {
-#       Fail-Json $result "state is '$state'; must be 'present' or 'absent'"
-# }
-# if ($state -eq "present") {
-#   #add_host($host_name,$ip_address)
-# }  
+  $state = Get-Attr $params "state" "present"
+  $state = $state.ToString().ToLower()
+  If (($state -ne "present") -and ($state -ne "absent")) {
+      Fail-Json $result "state is '$state'; must be 'present' or 'absent'"
+  }
+  if ($state -eq "present") {
+    add_host $host_name $ip_address
+  }
+  elseif ($state -eq "absent") {
+    remove_host $host_name $ip_address
+  }
 
 # Finally always return the $result attribute. This will have the "changed", "msg" and any other attribute
 # you want to add to the JSON output string
-Exit-Json $result;
+Exit-Json $result
